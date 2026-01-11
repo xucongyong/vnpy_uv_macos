@@ -453,7 +453,7 @@ class FutuGateway(BaseGateway):
         while page_req_key != None:  # 请求后面的所有结果
             ret, data, page_req_key = self.quote_ctx.request_history_kline(code=symbol, start=start_date, end=end_date, ktype=KLType.K_1M, page_req_key=page_req_key)   # 请求翻页后的数据
             if ret == RET_OK:
-                history_df = history_df.append(data, ignore_index=True)
+                history_df = pd.concat([history_df, data], ignore_index=True)
             else:
                 self.write_log(f"{data}")
 

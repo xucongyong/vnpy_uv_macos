@@ -2,9 +2,8 @@ from datetime import datetime
 from vnpy_ctastrategy.backtesting import BacktestingEngine
 from vnpy.trader.constant import Interval
 
-# 导入你的策略类
-# 注意：这里对应的是 strategies 文件夹下的 my_strategy.py 文件中的 MyStrategy 类
-from strategies.my_strategy import MyStrategy
+# 导入海龟策略
+from strategies.turtle_strategy import TurtleStrategy
 
 def run():
     # 1. 创建回测引擎
@@ -12,20 +11,19 @@ def run():
     
     # 2. 设置回测参数
     engine.set_parameters(
-        vt_symbol="IF888.CFFEX",    # 虚拟合约代码
-        interval="1m",              # K线周期
-        start=datetime(2019, 1, 1), # 开始时间
-        end=datetime(2019, 4, 30),  # 结束时间
-        rate=0.3/10000,             # 手续费万0.3
-        slippage=0.2,               # 滑点0.2
-        size=300,                   # 合约乘数
-        pricetick=0.2,              # 最小价格变动
-        capital=1_000_000,          # 初始本金
+        vt_symbol="00700.SEHK",     # 腾讯控股 (港股)
+        interval="1m",              # 1分钟线
+        start=datetime(2022, 1, 1), # 改一下日期到最近
+        end=datetime(2024, 6, 1),
+        rate=0.0015,                # 港股手续费/印花税约千分之1.5
+        slippage=0.1,               # 滑点 0.1
+        size=1,                     # 股票通常设为1
+        pricetick=0.2,              # 腾讯最小价格跳动通常为0.2
+        capital=1_000_000,
     )
 
     # 3. 添加策略
-    # setting 字典可以用来覆盖策略里的默认参数，例如 {"fast_window": 20}
-    engine.add_strategy(MyStrategy, {})
+    engine.add_strategy(TurtleStrategy, {})
 
     # 4. 加载数据
     print("开始加载历史数据...")
@@ -42,9 +40,6 @@ def run():
     # 7. 打印统计指标
     print("----------------------------------------")
     engine.calculate_statistics()
-    
-    # 8. 如果在支持GUI的环境(如Jupyter)可以画图，命令行下通常省略
-    # engine.show_chart()
 
 if __name__ == "__main__":
     run()
