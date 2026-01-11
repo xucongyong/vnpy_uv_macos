@@ -15,3 +15,9 @@
 
 
 可以把 ./my_strategy.py 文件,放在 上面的目录,也可以放在 ~/strategies/ 文件下面.
+
+
+
+# settings
+
+~/.vntrader
