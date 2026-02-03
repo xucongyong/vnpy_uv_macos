@@ -1,9 +1,18 @@
+import sys
+import os
+
+# Add vnpy_futu to Python path
+vnpy_futu_path = os.path.join(os.path.dirname(__file__), "vnpy_futu")
+if vnpy_futu_path not in sys.path:
+    sys.path.insert(0, vnpy_futu_path)
+
 from vnpy.event import EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import MainWindow, create_qapp
 from vnpy_ctastrategy import CtaStrategyApp
 from vnpy_futu.futu_gateway import FutuGateway
 from vnpy_ctabacktester import CtaBacktesterApp
+
 
 def main():
     """主入口函数"""

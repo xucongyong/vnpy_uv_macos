@@ -2,8 +2,10 @@ from datetime import datetime
 from vnpy_ctastrategy.backtesting import BacktestingEngine
 from vnpy.trader.constant import Interval
 
-# 导入海龟策略
-from strategies.turtle_strategy import TurtleStrategy
+# 导入自定义双均线策略
+# from x_dual_ma_strategy import XDualMaStrategy
+# 导入自定义布林带策略
+from x_bollinger_strategy import XBollingerStrategy
 
 def run():
     # 1. 创建回测引擎
@@ -14,7 +16,7 @@ def run():
         vt_symbol="00700.SEHK",     # 腾讯控股 (港股)
         interval="1m",              # 1分钟线
         start=datetime(2022, 1, 1), # 改一下日期到最近
-        end=datetime(2024, 6, 1),
+        end=datetime(2025, 6, 1),
         rate=0.0015,                # 港股手续费/印花税约千分之1.5
         slippage=0.1,               # 滑点 0.1
         size=1,                     # 股票通常设为1
@@ -23,7 +25,7 @@ def run():
     )
 
     # 3. 添加策略
-    engine.add_strategy(TurtleStrategy, {})
+    engine.add_strategy(XBollingerStrategy, {})
 
     # 4. 加载数据
     print("开始加载历史数据...")
