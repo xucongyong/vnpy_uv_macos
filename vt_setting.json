@@ -1,0 +1,15 @@
+{
+    "font.family": "微软雅黑",
+    "font.size": 12,
+    "log.active": true,
+    "log.level": 20,
+    "log.console": true,
+    "log.file": true,
+    "database.name": "postgresql",
+    "database.database": "postgres",
+    "database.host": "v.xucongyong.com",
+    "database.port": 5432,
+    "database.user": "postgres",
+    "database.password": "1121hotsren",
+    "database.timezone": "Asia/Shanghai"
+}

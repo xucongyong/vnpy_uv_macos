@@ -103,6 +103,7 @@ class XDualMaStrategy(CtaTemplate):
             elif self.pos > 0:
                 self.sell(bar.close_price * 0.99, abs(self.pos))
                 self.short(bar.close_price * 0.99, self.fixed_size)
+
         self.put_event()
 
     def on_15min_bar(self, bar: BarData):

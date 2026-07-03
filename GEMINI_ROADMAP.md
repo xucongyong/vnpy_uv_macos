@@ -98,8 +98,16 @@
     - *功能*: 科学计算最佳下注比例，最大化长期财富。
 - [ ] **Risk Parity (风险平价)**: 
     - *功能*: 根据波动率分配仓位，波动大的少买，波动小的多买。
-- [ ] **Stop Loss / Trailing Stop**: 
-    - *功能*: 动态止损与追踪止盈逻辑。
+---
+
+## 🛰️ Phase 7: 投研情报系统 (Research & Intelligence)
+*把全世界最聪明的大脑连接到我们的工厂。*
+
+- [x] **Arxiv Scanner**: 基础版论文搜索脚本完成。
+- [ ] **Precise Targeting**: 优化搜索关键词 (精确定位量化金融论文)。
+- [ ] **PDF Reader**: 集成 AI PDF 解析器，自动读取论文数学公式。
+- [ ] **Auto-Factor Gen**: 实现“论文代码化”，自动生成 `research_factors.py`。
+- [ ] **Quantpedia Connect**: 探索对接 Quantpedia 等专业量化库。
 
 ---
 
