@@ -2,6 +2,7 @@
 from vnpy_ctastrategy import CtaTemplate
 from vnpy_ctastrategy.base import StopOrder
 from vnpy.trader.object import TickData, BarData, OrderData, TradeData
+from vnpy.trader.constant import Interval
 from vnpy.trader.utility import ArrayManager, BarGenerator
 
 
@@ -51,12 +52,23 @@ class XBollingerStrategy(CtaTemplate):
         self.bg.update_tick(tick)
 
     def on_bar(self, bar: BarData):
-        self.bg.update_bar(bar)
+        """
+        K线回调。
+
+        日线(回测主场景)直接走交易逻辑;分钟线则聚合到 15 分钟再交易。
+        (修复前:日线喂给 BarGenerator 的 15 分钟窗口永远凑不满,策略全程 0 成交)
+        """
+        if bar.interval == Interval.DAILY:
+            self.on_trading_bar(bar)
+        else:
+            self.bg.update_bar(bar)
 
     def on_15min_bar(self, bar: BarData):
-        """
-        15分钟K线回调
-        """
+        """15分钟K线回调(分钟级回测/实盘路径)"""
+        self.on_trading_bar(bar)
+
+    def on_trading_bar(self, bar: BarData):
+        """实际交易逻辑,与 K 线周期解耦"""
         self.cancel_all()
 
         self.am.update_bar(bar)

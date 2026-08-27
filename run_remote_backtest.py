@@ -13,10 +13,12 @@ def run_remote_test():
     engine = BacktestingEngine()
     
     # 2. 配置参数 (使用我们刚刚下载的平安银行数据)
+    # 注意: 区间不要从 1991 开始 —— 当年股价 0.33 元, 后来涨了 33 倍,
+    #       布林策略的做空逻辑在这种行情下会把账户打爆(资金归零)
     engine.set_parameters(
         vt_symbol="000001.SZSE", # 平安银行
         interval=Interval.DAILY,
-        start=datetime(1991, 1, 1),
+        start=datetime(2015, 1, 1),
         end=datetime.now(),
         rate=0.0003, # 手续费
         slippage=0.2, # 滑点
@@ -26,7 +28,8 @@ def run_remote_test():
     )
     
     # 3. 添加策略 (这里以布林带策略为例)
-    engine.add_strategy(XBollingerStrategy, {})
+    # 注意: fixed_size 是股数, A股 size=100 (1手=100股), 100股即可避免单笔全仓爆仓
+    engine.add_strategy(XBollingerStrategy, {"fixed_size": 100})
     
     # 4. 加载数据 (这一步会自动连接远程 PostgreSQL)
     print("   📥 正在从远程数据库加载 K 线数据...")
@@ -41,7 +44,7 @@ def run_remote_test():
     statistics = engine.calculate_statistics()
     
     print("\n" + "="*50)
-    print("🏆 回测报告 (平安银行 1991-2026)")
+    print("🏆 回测报告 (平安银行 2015-2026)")
     for key, value in statistics.items():
         print(f"   - {key}: {value}")
     print("="*50)

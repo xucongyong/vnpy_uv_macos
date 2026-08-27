@@ -6,7 +6,7 @@
     "log.console": true,
     "log.file": true,
     "database.name": "postgresql",
-    "database.database": "postgres",
+    "database.database": "quant",
     "database.host": "v.xucongyong.com",
     "database.port": 5432,
     "database.user": "postgres",
