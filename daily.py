@@ -31,6 +31,7 @@ DEFAULT_SYMBOLS = ["00700.SEHK", "AAPL.NASDAQ", "000001.SZSE"]
 DEFAULT_STRATEGIES = ["dual_ma", "boll", "rsi"]
 REPORT_DIR = ROOT / "research" / "reports"
 WATCHLIST_FILE = ROOT / "watchlist.txt"
+STRATEGIES_FILE = ROOT / "strategies.txt"
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,6 +61,18 @@ def resolve_symbols(args) -> list[str]:
     symbols = [line.strip() for line in p.read_text().splitlines()
                if line.strip() and not line.startswith("#")]
     return symbols or DEFAULT_SYMBOLS
+
+
+def resolve_strategies(args) -> list[str]:
+    """确定策略: --strategies > strategies.txt > 内置3个。"""
+    if args.strategies and args.strategies != ",".join(DEFAULT_STRATEGIES):
+        return [s.strip() for s in args.strategies.split(",") if s.strip()]
+    if STRATEGIES_FILE.exists():
+        strategies = [line.strip() for line in STRATEGIES_FILE.read_text().splitlines()
+                      if line.strip() and not line.startswith("#")]
+        if strategies:
+            return strategies
+    return DEFAULT_STRATEGIES
 
 
 def step_sync(symbols: list[str], days: int) -> None:
@@ -120,7 +133,7 @@ def step_report(results: list[dict]) -> None:
 def main() -> None:
     args = parse_args()
     symbols = resolve_symbols(args)
-    strategy_specs = [s.strip() for s in args.strategies.split(",") if s.strip()]
+    strategy_specs = resolve_strategies(args)
 
     start = datetime.datetime.strptime(args.start, "%Y-%m-%d") if args.start \
         else datetime.datetime.now() - datetime.timedelta(days=365 * 3)

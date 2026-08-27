@@ -1,0 +1,5 @@
+# 策略名单: 每行一个策略, 可带参数(用减号接)
+# daily.py 每天会对 watchlist.txt 里每只股票跑这些策略
+dual_ma
+boll
+rsi

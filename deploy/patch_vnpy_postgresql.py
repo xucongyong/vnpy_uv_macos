@@ -12,6 +12,9 @@
 import pathlib
 import sys
 
+# 确保项目根目录可导入 (否则从 deploy/ 跑时找不到 vnpy)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
 
 def apply_patch(target: pathlib.Path) -> None:
     src = target.read_text(encoding="utf-8")
@@ -64,8 +67,9 @@ def main() -> None:
 
     try:
         import vnpy_postgresql
-    except ImportError:
-        print("❌ 找不到 vnpy_postgresql, 请先安装 (pip install vnpy-postgresql)")
+    except Exception as e:
+        print(f"❌ 导入 vnpy_postgresql 失败: {type(e).__name__}: {e}")
+        print("   通常是缺依赖, 试: uv pip install peewee tzlocal importlib-metadata ta-lib --python .venv/bin/python")
         sys.exit(1)
 
     target = pathlib.Path(vnpy_postgresql.__file__).parent / "postgresql_database.py"
