@@ -30,6 +30,10 @@ dist
 *.pdb
 *.log
 
+# 每日回测报告 (生成物, 不入库)
+research/reports/
+batch_backtest_results.csv
+
 # Documents
 _build
 _static
