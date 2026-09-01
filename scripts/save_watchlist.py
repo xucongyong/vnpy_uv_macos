@@ -122,8 +122,8 @@ def get_latest_bar_date(db, symbol: str, exchange: Exchange):
 
 
 def update_symbol(symbol: str, exchange: str, days: int, buffer: int,
-                  force_full: bool) -> int:
-    """保存一只股票, 返回本次存进去的K线数。"""
+                  force_full: bool, max_retries: int = 3) -> int:
+    """保存一只股票, 返回本次存进去的K线数 (含失败自动重试机制)。"""
     db = get_database()
     today = datetime.datetime.now().replace(hour=0, minute=0, second=0)
 
@@ -137,11 +137,25 @@ def update_symbol(symbol: str, exchange: str, days: int, buffer: int,
         else:
             start = today - datetime.timedelta(days=days)
 
-    # 抓数据
-    df = fetch_df(symbol, exchange, start, today)
+    df = None
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            df = fetch_df(symbol, exchange, start, today)
+            if df is not None and not df.empty:
+                break
+            print(f"  ⚠️ [{attempt}/{max_retries}] {symbol}.{exchange}: akshare 返回空数据，等待重试...")
+        except Exception as e:
+            last_err = e
+            print(f"  ⚠️ [{attempt}/{max_retries}] {symbol}.{exchange} 网络或接口异常 ({e})，等待重试...")
+        
+        if attempt < max_retries:
+            time.sleep(2 ** attempt)  # 指数退避: 2s, 4s, 8s
+
     if df is None or df.empty:
-        print(f"  ⚠️ {symbol}.{exchange}: akshare 返回空数据")
-        return 0
+        if last_err:
+            raise last_err
+        raise RuntimeError("akshare 返回空数据")
 
     # 转 BarData 并存入 (upsert, 重复自动覆盖)
     bars = df_to_bars(df, symbol, exchange)
@@ -161,6 +175,7 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=2500, help="全量拉多少天, 默认 2500(约10年)")
     parser.add_argument("--buffer", type=int, default=5, help="增量缓冲天数, 默认 5")
     parser.add_argument("--force-full", action="store_true", help="强制全量重拉, 忽略库里已有数据")
+    parser.add_argument("--retries", type=int, default=3, help="失败重试次数, 默认 3 次")
     args = parser.parse_args()
 
     if args.symbols_file:
@@ -174,8 +189,10 @@ def main() -> None:
         sys.exit(1)
 
     total = 0
+    failed_symbols = []
     t0 = time.time()
     print(f"🚀 开始同步 {len(symbols)} 只标的 (days={args.days}, force_full={args.force_full})")
+    
     for raw in symbols:
         if "." in raw:
             symbol, exchange = raw.rsplit(".", 1)
@@ -183,11 +200,28 @@ def main() -> None:
             symbol, exchange = raw, detect_exchange(raw)
         exchange = exchange.upper()
         try:
-            total += update_symbol(symbol, exchange, args.days, args.buffer, args.force_full)
+            total += update_symbol(symbol, exchange, args.days, args.buffer, args.force_full, args.retries)
         except Exception as e:
-            print(f"  ❌ {symbol}.{exchange} 失败: {e}")
+            print(f"  ❌ {symbol}.{exchange} 最终失败: {e}")
+            failed_symbols.append((symbol, exchange))
 
-    print(f"🎉 完成, 共保存 {total} 根K线, 用时 {time.time()-t0:.0f}s")
+    # 如果有失败标的，进行一轮汇总二次重试
+    if failed_symbols:
+        print(f"\n🔄 正在对 {len(failed_symbols)} 只首次失败的标的进行二次补跑重试...")
+        still_failed = []
+        for symbol, exchange in failed_symbols:
+            time.sleep(3)
+            try:
+                total += update_symbol(symbol, exchange, args.days, args.buffer, args.force_full, args.retries)
+                print(f"  ✅ {symbol}.{exchange} 二次补跑成功！")
+            except Exception as e:
+                still_failed.append(f"{symbol}.{exchange}")
+                print(f"  ❌ {symbol}.{exchange} 二次补跑仍然失败: {e}")
+
+        if still_failed:
+            print(f"\n⚠️ 以下 {len(still_failed)} 只标的本次彻底同步失败: {', '.join(still_failed)}")
+
+    print(f"\n🎉 完成, 共保存 {total} 根K线, 用时 {time.time()-t0:.0f}s")
 
 
 if __name__ == "__main__":
