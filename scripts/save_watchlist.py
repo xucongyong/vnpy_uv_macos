@@ -65,8 +65,15 @@ def fetch_df(symbol: str, exchange: str, start: datetime.datetime,
     e = end.strftime("%Y%m%d")
 
     if exchange in ("SSE", "SZSE", "BSE"):
-        return ak.stock_zh_a_hist(symbol=symbol, period="daily",
-                                  start_date=s, end_date=e, adjust="qfq")
+        try:
+            return ak.stock_zh_a_hist(symbol=symbol, period="daily",
+                                      start_date=s, end_date=e, adjust="qfq")
+        except Exception:
+            # 海外 VPS 或东财被封时, 自动降级新浪接口 (支持 sh/sz 前缀)
+            prefix = "sh" if exchange == "SSE" else ("sz" if exchange == "SZSE" else "bj")
+            df = ak.stock_zh_a_daily(symbol=f"{prefix}{symbol}", adjust="qfq")
+            df["date"] = pd.to_datetime(df["date"])
+            return df[(df["date"] >= start) & (df["date"] <= end)]
 
     if exchange == "SEHK":
         try:
