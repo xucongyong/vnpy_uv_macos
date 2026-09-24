@@ -34,10 +34,10 @@ def build_factor_olympics(symbol="AAPL.NASDAQ", days=300, output_file="factor_ol
         try:
             series = meta["func"](df)
             metrics = evaluate_factor_on_symbol(series, df["close"], forward_periods=5)
-            ic = metrics["ic"]
-            rank_ic = metrics["rank_ic"]
-            ir = metrics["ic_ir"]
-            win = metrics["win_rate"]
+            ic = float(metrics["ic"])
+            rank_ic = float(metrics["rank_ic"])
+            ir = float(metrics["ic_ir"])
+            win = float(metrics["win_rate"])
 
             # 评定等级
             if rank_ic > 0.08:
@@ -70,6 +70,7 @@ def build_factor_olympics(symbol="AAPL.NASDAQ", days=300, output_file="factor_ol
                 "advice": advice
             })
         except Exception as e:
+            print(f"  ⚠️ 因子 {name} 评估异常: {e}")
             continue
 
     df_res = pd.DataFrame(results).sort_values("rank_ic", ascending=False).reset_index(drop=True)
