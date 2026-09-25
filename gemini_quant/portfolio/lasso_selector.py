@@ -71,7 +71,7 @@ def run_lasso_selection(
     print(f"🔬 正在对 {X.shape[1]} 个因子运行 LASSO L1 正则化降维大考...")
     
     # 使用带交叉验证的 LassoCV 寻找最优惩罚强度 lambda
-    lasso = LassoCV(cv=5, random_state=42, max_iter=3000, n_alphas=50)
+    lasso = LassoCV(cv=5, random_state=42, max_iter=3000)
     lasso.fit(X, y)
 
     coefs = lasso.coef_
