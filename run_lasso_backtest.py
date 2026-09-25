@@ -29,7 +29,7 @@ from vnpy.trader.constant import Interval, Exchange
 from vnpy.trader.object import BarData
 
 
-def run_backtest_with_engine(symbol: str, df: pd.DataFrame, capital: float = 1_000_000):
+def run_backtest_with_engine(symbol: str, df: pd.DataFrame, selected_factors: list = None, capital: float = 1_000_000):
     """驱动 VeighNa 回测引擎进行严格扣费回测"""
     engine = BacktestingEngine()
     
@@ -70,9 +70,11 @@ def run_backtest_with_engine(symbol: str, df: pd.DataFrame, capital: float = 1_0
 
     engine.add_strategy(LassoEnsembleStrategy, {
         "fixed_size": 2000 if exchange == Exchange.SEHK else 100,
-        "threshold_buy": 0.58,
-        "threshold_sell": 0.42,
-        "trailing_stop_pct": 0.06
+        "threshold_buy": 0.54,
+        "threshold_sell": 0.46,
+        "trailing_stop_pct": 0.06,
+        "history_window": 120,
+        "selected_factors": selected_factors
     })
 
     # 将 DataFrame 转换为 vnpy BarData 并载入引擎
@@ -326,7 +328,9 @@ def main():
     selected_factors = run_lasso_selection(df, forward_days=5, top_n=5, max_corr=0.35)
 
     # 3. 执行严格扣费回测
-    df_daily, stats, trades, rate, slippage = run_backtest_with_engine(args.symbol, df)
+    df_daily, stats, trades, rate, slippage = run_backtest_with_engine(
+        args.symbol, df, selected_factors=selected_factors
+    )
 
     # 4. 生成交互式可视化大屏
     generate_interactive_report(

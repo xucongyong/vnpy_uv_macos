@@ -41,22 +41,33 @@ class LassoEnsembleStrategy(CtaTemplate):
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         super().__init__(cta_engine, strategy_name, vt_symbol, setting)
-        self.am = ArrayManager(size=120)
+        self.history_window = setting.get("history_window", 120)
+        self.am = ArrayManager(size=self.history_window + 30)
         self.factors_registry = get_all_factors()
         
-        # 5 大正交核心兵种配置 (因子名与 IC 方向符号)
-        # 涵盖: WorldQuant反转、动量、微软波幅加权大单、形态、佳庆波动率
-        self.active_factor_configs = [
-            {"name": "wq_alpha_094", "weight_sign": -1.0, "role": "超跌抄底兵"},
-            {"name": "wq_alpha_019", "weight_sign": 1.0, "role": "动量前锋兵"},
-            {"name": "qlib_wvma_5",  "weight_sign": 1.0, "role": "主力资金兵"},
-            {"name": "qlib_kmid",    "weight_sign": 1.0, "role": "日内博弈兵"},
-            {"name": "chaikin_vol",  "weight_sign": -1.0, "role": "波动防暴兵"}
-        ]
+        # 动态接收 LASSO 选拔出的正交兵种
+        if "selected_factors" in setting and setting["selected_factors"]:
+            self.active_factor_configs = []
+            for item in setting["selected_factors"]:
+                fname = item["name"]
+                sign = 1.0 if item.get("rank_ic", 0.0) >= 0 else -1.0
+                self.active_factor_configs.append({
+                    "name": fname,
+                    "weight_sign": sign,
+                    "role": item.get("category", "核心兵种")
+                })
+        else:
+            self.active_factor_configs = [
+                {"name": "wq_alpha_088", "weight_sign": 1.0, "role": "动量前锋兵"},
+                {"name": "wq_alpha_030", "weight_sign": 1.0, "role": "量能爆发兵"},
+                {"name": "wq_alpha_081", "weight_sign": -1.0, "role": "潜伏洗盘兵"},
+                {"name": "qlib_std_20",  "weight_sign": 1.0, "role": "波动防暴兵"},
+                {"name": "wq_alpha_022", "weight_sign": -1.0, "role": "量价背离兵"}
+            ]
 
     def on_init(self):
         self.write_log("多因子 LASSO 5大正交策略初始化中，预热加载历史 K 线...")
-        self.load_bar(100)
+        self.load_bar(self.history_window + 30)
 
     def on_start(self):
         self.write_log("多因子 LASSO 策略正式启动运行！")
