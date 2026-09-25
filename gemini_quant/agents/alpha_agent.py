@@ -7,7 +7,13 @@
 from typing import Dict, Any, List
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
+try:
+    import lightgbm as lgb
+    HAS_LGBM = True
+except ImportError:
+    HAS_LGBM = False
+    from sklearn.ensemble import GradientBoostingRegressor
+
 from gemini_quant.agents.base_agent import BaseAgent, COLOR_YELLOW
 from gemini_quant.factors.base import get_all_factors
 
@@ -84,24 +90,32 @@ class AlphaAgent(BaseAgent):
             X_train = pd.concat(train_rows_X, ignore_index=True)
             y_train = pd.concat(train_rows_Y, ignore_index=True)
 
-            self.log(f"正在对跨标的 {len(X_train)} 条特征样本运行 LightGBM 树模型拟合 (防止过拟合: depth=3, lr=0.03)...")
-            lgbm = lgb.LGBMRegressor(
-                n_estimators=80,
-                max_depth=3,
-                learning_rate=0.03,
-                min_child_samples=20,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                verbose=-1
-            )
-            lgbm.fit(X_train, y_train)
+            self.log(f"正在对跨标的 {len(X_train)} 条特征样本运行 {'LightGBM' if HAS_LGBM else 'GradientBoosting'} 树模型拟合 (防止过拟合: depth=3, lr=0.03)...")
+            if HAS_LGBM:
+                model = lgb.LGBMRegressor(
+                    n_estimators=80,
+                    max_depth=3,
+                    learning_rate=0.03,
+                    min_child_samples=20,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    verbose=-1
+                )
+            else:
+                model = GradientBoostingRegressor(
+                    n_estimators=60,
+                    max_depth=3,
+                    learning_rate=0.03,
+                    random_state=42
+                )
+            model.fit(X_train, y_train)
 
             # 3. 对全历史时间序列进行前向非线性打分预测
             pred_scores_dict = {}
             for sym in symbols:
                 feats = feature_tables[sym]
-                preds = lgbm.predict(feats)
+                preds = model.predict(feats)
                 # 结合基准正交因子线性分，平滑极端预测
                 linear_baseline = feats[[f["name"] for f in core_factors]].mean(axis=1).values
                 blended = preds * 0.7 + linear_baseline * 0.3 * 0.05
