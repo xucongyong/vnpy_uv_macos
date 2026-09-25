@@ -168,3 +168,37 @@ def factor_alpha_054(df: pd.DataFrame) -> pd.Series:
     inner = (df["low"] - df["close"]) * (df["open"] ** 5)
     outer = (df["low"] - df["high"]) * (df["close"] ** 5)
     return -1.0 * (inner / (outer + 1e-6))
+
+
+# ==============================================================================
+# 6. 经典技术指标先锋 (Classic Technical Indicators)
+# ==============================================================================
+
+@register_factor(name="kdj_j", category="狙击手", desc="KDJ极速J线: 3*K-2*D超敏感线，J<0严重超卖超跌，J>100严重超买")
+def factor_kdj_j(df: pd.DataFrame) -> pd.Series:
+    low_min = df["low"].rolling(9).min()
+    high_max = df["high"].rolling(9).max()
+    rsv = (df["close"] - low_min) / (high_max - low_min + 1e-6) * 100.0
+    k = rsv.ewm(com=2).mean()
+    d = k.ewm(com=2).mean()
+    return 3.0 * k - 2.0 * d
+
+@register_factor(name="cci_14", category="冲锋队", desc="14日顺势指标CCI: 衡量当前价格偏离其统计中枢的极端程度，突破+100为强势加速")
+def factor_cci_14(df: pd.DataFrame) -> pd.Series:
+    tp = (df["high"] + df["low"] + df["close"]) / 3.0
+    ma = tp.rolling(14).mean()
+    md = (tp - ma).abs().rolling(14).mean()
+    return (tp - ma) / (0.015 * md + 1e-6)
+
+@register_factor(name="williams_r_14", category="抄底队", desc="14日威廉指标WR: 衡量多空压制弹簧力度，WR<-80进入极度超跌蓄力区")
+def factor_williams_r_14(df: pd.DataFrame) -> pd.Series:
+    high_max = df["high"].rolling(14).max()
+    low_min = df["low"].rolling(14).min()
+    return -100.0 * (high_max - df["close"]) / (high_max - low_min + 1e-6)
+
+@register_factor(name="chaikin_vol", category="防暴队", desc="佳庆离散波动率: 衡量最高价与最低价波幅EMA的变化率，暴跌暴涨前常出现剧烈收敛")
+def factor_chaikin_vol(df: pd.DataFrame) -> pd.Series:
+    hl_range = df["high"] - df["low"]
+    ema = hl_range.ewm(span=10).mean()
+    return (ema - ema.shift(10)) / (ema.shift(10) + 1e-6)
+
