@@ -51,11 +51,16 @@ def run_backtest_with_engine(symbol: str, df: pd.DataFrame, capital: float = 1_0
         slippage = 0.01
         pricetick = 0.01
 
+    start_dt = df["date"].iloc[0]
+    end_dt = df["date"].iloc[-1]
+    start_py = start_dt.to_pydatetime() if hasattr(start_dt, "to_pydatetime") else pd.to_datetime(start_dt).to_pydatetime()
+    end_py = end_dt.to_pydatetime() if hasattr(end_dt, "to_pydatetime") else pd.to_datetime(end_dt).to_pydatetime()
+
     engine.set_parameters(
         vt_symbol=f"{raw_symbol}.{exchange.value}",
         interval=Interval.DAILY,
-        start=df.index[0].to_pydatetime(),
-        end=df.index[-1].to_pydatetime(),
+        start=start_py,
+        end=end_py,
         rate=rate,
         slippage=slippage,
         size=1,
@@ -72,11 +77,13 @@ def run_backtest_with_engine(symbol: str, df: pd.DataFrame, capital: float = 1_0
 
     # 将 DataFrame 转换为 vnpy BarData 并载入引擎
     history_data = []
-    for dt, row in df.iterrows():
+    for _, row in df.iterrows():
+        dt = row["date"]
+        pydt = dt.to_pydatetime() if hasattr(dt, "to_pydatetime") else pd.to_datetime(dt).to_pydatetime()
         bar = BarData(
             symbol=raw_symbol,
             exchange=exchange,
-            datetime=dt.to_pydatetime() if isinstance(dt, pd.Timestamp) else dt,
+            datetime=pydt,
             interval=Interval.DAILY,
             volume=float(row["volume"]),
             open_price=float(row["open"]),
@@ -113,8 +120,14 @@ def generate_interactive_report(
     benchmark_equity = (df["close"] / first_close) * stats.get("capital", 1_000_000)
 
     # 策略净值序列
-    strat_dates = df_daily.index
-    strat_net = df_daily["balance"]
+    if df_daily is not None and not df_daily.empty and "balance" in df_daily.columns:
+        strat_dates = df_daily.index
+        strat_net = df_daily["balance"]
+        strat_dd = df_daily.get("drawdown", pd.Series([0.0] * len(df_daily), index=strat_dates))
+    else:
+        strat_dates = df["date"]
+        strat_net = pd.Series([stats.get("capital", 1_000_000)] * len(df), index=df["date"])
+        strat_dd = pd.Series([0.0] * len(df), index=df["date"])
 
     # 提取真实交易点位
     buy_dates, buy_prices = [], []
@@ -146,7 +159,7 @@ def generate_interactive_report(
 
     # 主曲线 2: 买入并持有基准
     fig.add_trace(go.Scatter(
-        x=df.index, y=benchmark_equity,
+        x=df["date"], y=benchmark_equity,
         name=f"⚪ {symbol} 买入并持有基准 (Buy & Hold)",
         line=dict(color="#90a4ae", width=1.8, dash="dot"),
         hovertemplate="日期: %{x}<br>基准资产: %{y:,.0f} 元<extra></extra>"
@@ -155,7 +168,7 @@ def generate_interactive_report(
     # 买入标记
     if buy_dates:
         fig.add_trace(go.Scatter(
-            x=buy_dates, y=[df_daily.loc[d, "balance"] if d in df_daily.index else strat_net.iloc[-1] for d in buy_dates],
+            x=buy_dates, y=[strat_net.loc[d] if d in strat_net.index else strat_net.iloc[-1] for d in buy_dates],
             mode="markers",
             name="🟢 买入开仓",
             marker=dict(symbol="triangle-up", size=11, color="#00e676", line=dict(width=1, color="#fff"))
@@ -164,14 +177,13 @@ def generate_interactive_report(
     # 卖出标记
     if sell_dates:
         fig.add_trace(go.Scatter(
-            x=sell_dates, y=[df_daily.loc[d, "balance"] if d in df_daily.index else strat_net.iloc[-1] for d in sell_dates],
+            x=sell_dates, y=[strat_net.loc[d] if d in strat_net.index else strat_net.iloc[-1] for d in sell_dates],
             mode="markers",
             name="🔴 平仓/止损",
             marker=dict(symbol="triangle-down", size=11, color="#ff5252", line=dict(width=1, color="#fff"))
         ), row=1, col=1)
 
     # 子图 2: 策略回撤曲线
-    strat_dd = df_daily["drawdown"]
     fig.add_trace(go.Scatter(
         x=strat_dates, y=strat_dd,
         name="策略回撤",

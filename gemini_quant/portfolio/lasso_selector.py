@@ -71,29 +71,47 @@ def run_lasso_selection(
     print(f"🔬 正在对 {X.shape[1]} 个因子运行 LASSO L1 正则化降维大考...")
     
     # 使用带交叉验证的 LassoCV 寻找最优惩罚强度 lambda
-    lasso = LassoCV(cv=5, random_state=42, max_iter=3000)
+    lasso = LassoCV(cv=5, alphas=np.logspace(-5, -1, 30), random_state=42, max_iter=3000)
     lasso.fit(X, y)
 
     coefs = lasso.coef_
-    non_zero_indices = np.where(np.abs(coefs) > 1e-5)[0]
+    non_zero_indices = np.where(np.abs(coefs) > 1e-6)[0]
     candidate_names = [X.columns[i] for i in non_zero_indices]
     
     print(f"⚡ LASSO 成功将冗余特征压缩归零！从 {X.shape[1]} 个因子中提炼出 {len(candidate_names)} 个核心候选因子。")
 
-    if not candidate_names:
-        # 降级备选：如果惩罚过高导致全为0，取前排高IC因子
-        candidate_names = list(X.columns[:15])
+    if len(candidate_names) < top_n:
+        # 降级备选：如果惩罚过高导致因子偏少，补充全市场 Rank IC 绝对值最高的前排因子
+        scored_ic = []
+        for col in X.columns:
+            try:
+                metrics = evaluate_factor_on_symbol(matrix_df[col], df["close"], forward_periods=forward_days)
+                ic = metrics.get("rank_ic", 0.0)
+                if not (np.isnan(ic) or np.isinf(ic)):
+                    scored_ic.append((col, abs(ic)))
+            except Exception:
+                pass
+        scored_ic.sort(key=lambda item: item[1], reverse=True)
+        for item in scored_ic:
+            if item[0] not in candidate_names:
+                candidate_names.append(item[0])
+            if len(candidate_names) >= 20:
+                break
 
     # 计算候选因子的 Rank IC 与综合重要性
     scored_candidates = []
     for name in candidate_names:
         series = matrix_df[name]
         metrics = evaluate_factor_on_symbol(series, df["close"], forward_periods=forward_days)
-        rank_ic = float(metrics["rank_ic"])
+        raw_ic = metrics.get("rank_ic", 0.0)
+        rank_ic = float(raw_ic) if not (np.isnan(raw_ic) or np.isinf(raw_ic)) else 0.0
         weight_coef = float(lasso.coef_[X.columns.get_loc(name)]) if name in X.columns else 0.01
         
         # 综合选拔分: 考虑回归系数大小与 Rank IC
         score = abs(rank_ic) * (1.0 + abs(weight_coef) * 10.0)
+        
+        raw_win = metrics.get("win_rate", 0.5)
+        win_rate = float(raw_win) if not (np.isnan(raw_win) or np.isinf(raw_win)) else 0.5
         
         scored_candidates.append({
             "name": name,
@@ -101,7 +119,7 @@ def run_lasso_selection(
             "desc": meta_dict[name].get("desc", name),
             "rank_ic": rank_ic,
             "lasso_coef": weight_coef,
-            "win_rate": float(metrics["win_rate"]),
+            "win_rate": win_rate,
             "score": score
         })
 
