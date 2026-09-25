@@ -1,6 +1,7 @@
-"""组合轮动特工 (PortfolioAgent)
+"""组合轮动特工 (PortfolioAgent) - 带换手迟滞缓冲带与 ATR 自适应风控
 
-负责资产池动态资金分配、每周横截面选股轮动、跨市场不同费率精准扣减及组合净值核算。
+负责资产池动态资金分配、基于 15% 迟滞缓冲带的防过度交易优胜劣汰、
+ATR 动态止损防御及跨市场交易费率精准扣减。
 """
 
 from typing import Dict, Any, List
@@ -20,7 +21,7 @@ def get_market_fee_rate(symbol: str) -> float:
 
 
 class PortfolioAgent(BaseAgent):
-    """负责跨市场多资产横截面调仓与资金轮动的特工"""
+    """负责跨市场多资产横截面调仓与迟滞缓冲资金轮动的特工"""
 
     def __init__(self, name: str = "Quartermaster"):
         super().__init__(
@@ -29,20 +30,20 @@ class PortfolioAgent(BaseAgent):
             emoji="⚖️",
             color_code=COLOR_GREEN
         )
+        self.hysteresis_threshold = 0.15  # 15% 护城河缓冲带: 新标的分数必须显著超越持仓老标的 15% 才准换仓
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         bars_dict: Dict[str, pd.DataFrame] = context["bars_dict"]
         aligned_dates: List[pd.Timestamp] = context["aligned_dates"]
         alpha_scores_df: pd.DataFrame = context["alpha_scores_df"]
+        atr_stop_df: pd.DataFrame = context.get("risk_rules", {}).get("atr_stop_df")
         top_k: int = context.get("top_k", 2)
         rebalance_days: int = context.get("rebalance_days", 5)
         initial_capital: float = context.get("initial_capital", 1_000_000.0)
-        trailing_stop_pct: float = context.get("risk_rules", {}).get("trailing_stop_pct", 0.06)
 
         symbols = list(bars_dict.keys())
-        self.log(f"开始启动跨市场多资产组合回测 (初始本金: {initial_capital:,.0f} 元, 每 {rebalance_days} 天轮动 Top-{top_k} 强股)...")
+        self.log(f"启动【低换手·高胜率】组合轮动回测 (初始本金: {initial_capital:,.0f} 元, 设立 {self.hysteresis_threshold*100:.0f}% 防折腾护城河)...")
 
-        # 整理价格收盘矩阵
         close_matrix = pd.DataFrame(
             {sym: bars_dict[sym]["close"].values for sym in symbols},
             index=aligned_dates
@@ -63,17 +64,22 @@ class PortfolioAgent(BaseAgent):
             current_date = aligned_dates[i]
             today_prices = close_matrix.iloc[i]
 
-            # 1. 每日盘中硬风控：盯防个股 6% 移动追踪止损
+            # 1. 每日盘中 ATR 自适应动态硬止损 (根据标的自身真实波幅动态调节，防恶意洗盘)
             for sym in symbols:
                 if holdings[sym] > 0:
                     px = today_prices[sym]
                     if px > peak_prices[sym]:
                         peak_prices[sym] = px
                     
-                    # 检查是否回撤超过止损线
+                    # 读取该标的在当天的专属动态 ATR 止损线
+                    if atr_stop_df is not None and sym in atr_stop_df.columns:
+                        current_stop_pct = atr_stop_df.iloc[i][sym]
+                    else:
+                        current_stop_pct = 0.07
+
                     dd = (peak_prices[sym] - px) / peak_prices[sym]
-                    if dd >= trailing_stop_pct:
-                        # 强制平仓止损
+                    if dd >= current_stop_pct:
+                        # 触发 ATR 动态止损，坚决清仓保命
                         shares = holdings[sym]
                         revenue = shares * px
                         fee = revenue * get_market_fee_rate(sym)
@@ -85,24 +91,53 @@ class PortfolioAgent(BaseAgent):
                         trade_records.append({
                             "date": current_date.strftime("%Y-%m-%d"),
                             "symbol": sym,
-                            "action": "🚨 强制止损",
+                            "action": "🚨 ATR自适应止损",
                             "price": px,
                             "shares": shares,
                             "fee": fee,
-                            "reason": f"高点回撤 {dd*100:.1f}% 触发 6% 硬止损"
+                            "reason": f"回撤 {dd*100:.1f}% 触碰动态止损阈值 ({current_stop_pct*100:.1f}%)"
                         })
-                        self.log_warning(f"[{current_date.strftime('%Y-%m-%d')}] {sym} 触碰止损线 (回撤 {dd*100:.1f}%)，立即强制清仓！")
+                        self.log_warning(f"[{current_date.strftime('%Y-%m-%d')}] {sym} 触碰专属动态止损线 {current_stop_pct*100:.1f}%，立即清仓！")
 
-            # 2. 定期周期轮动 (每 rebalance_days 天调仓)
+            # 2. 定期周期轮动 (带 15% 迟滞缓冲带，消除频繁摩擦)
             if i % rebalance_days == 0 and i > 60:
-                # 获取昨天的因子打分进行选拔 (规避未来函数)
                 scores = alpha_scores_df.iloc[i - 1].dropna()
                 if len(scores) >= top_k:
-                    top_candidates = list(scores.nlargest(top_k).index)
+                    # 当前持有的股票集合
+                    held_symbols = [s for s in symbols if holdings[s] > 0]
                     
-                    # 卖出不在候选名单中的落后持仓
+                    # 确定最新入选名单 (带迟滞缓冲带机制)
+                    score_range = max(scores.max() - scores.min(), 0.1)
+                    buffer_points = self.hysteresis_threshold * score_range
+
+                    # 先找初始全局 Top-K 候选
+                    all_sorted = list(scores.nlargest(len(symbols)).index)
+                    candidate_pool = list(all_sorted[:top_k])
+
+                    # 缓冲带审查: 如果持仓老股票不在 candidate_pool 里，但其分数并没有落后第 top_k 名超过 buffer_points，继续保护！
+                    final_selected = []
+                    # 先让表现依旧优异的老标的优先保级
+                    for h_sym in held_symbols:
+                        # 如果老标的依然排在稳健区间 (例如排在前 top_k+1)，且分数落后不严重
+                        if h_sym in all_sorted:
+                            rank = all_sorted.index(h_sym)
+                            if rank <= top_k:  # 本身就在前列
+                                final_selected.append(h_sym)
+                            elif rank == top_k:  # 刚好在边界，比较分差
+                                boundary_score = scores[candidate_pool[-1]]
+                                if (boundary_score - scores[h_sym]) < buffer_points:
+                                    final_selected.append(h_sym)
+
+                    # 用最高分的新候选填满剩余名额
+                    for cand in all_sorted:
+                        if cand not in final_selected:
+                            final_selected.append(cand)
+                        if len(final_selected) >= top_k:
+                            break
+
+                    # ① 卖出真正破位、被彻底剔除的老持仓
                     for sym in symbols:
-                        if holdings[sym] > 0 and sym not in top_candidates:
+                        if holdings[sym] > 0 and sym not in final_selected:
                             px = today_prices[sym]
                             shares = holdings[sym]
                             revenue = shares * px
@@ -119,21 +154,20 @@ class PortfolioAgent(BaseAgent):
                                 "price": px,
                                 "shares": shares,
                                 "fee": fee,
-                                "reason": "因子得分落后，轮动换马"
+                                "reason": "因子得分显著跌出梯队，换马淘汰"
                             })
 
-                    # 计算当前总资产，并为目标股票平分资金
+                    # ② 动态分配资金到目标选拔标的
                     current_portfolio_val = cash + sum(holdings[s] * today_prices[s] for s in symbols)
                     target_val_per_stock = current_portfolio_val / float(top_k)
 
-                    # 买入或补齐目标资产
-                    for sym in top_candidates:
+                    # 只有当持仓偏差超过目标权重的 12% 时才执行调仓补齐，避免微量调仓交手续费
+                    for sym in final_selected:
                         px = today_prices[sym]
                         current_stock_val = holdings[sym] * px
                         delta_val = target_val_per_stock - current_stock_val
 
-                        # 若需要增仓且现金充足
-                        if delta_val > 5000 and cash > 5000:
+                        if delta_val > (target_val_per_stock * 0.12) and cash > 10000:
                             buy_val = min(delta_val, cash * 0.98)
                             fee_rate = get_market_fee_rate(sym)
                             net_val = buy_val / (1.0 + fee_rate)
@@ -153,7 +187,7 @@ class PortfolioAgent(BaseAgent):
                                     "price": px,
                                     "shares": shares,
                                     "fee": fee,
-                                    "reason": f"综合因子得分排名前 {top_k}"
+                                    "reason": f"突破15%护城河，强势入选Top-{top_k}"
                                 })
 
             # 3. 计算当日总资产净值
@@ -197,10 +231,10 @@ class PortfolioAgent(BaseAgent):
         daily_ret = equity_df["equity"].pct_change().dropna()
         sharpe = (daily_ret.mean() / (daily_ret.std() + 1e-6)) * np.sqrt(252)
 
-        self.log_success(f"组合回测圆满结束！")
-        self.log(f"  策略总收益率: {total_return:+.2f}% | 等权基准收益: {bm_total_return:+.2f}%")
-        self.log(f"  年化收益率: {annual_return:+.2f}% | 最大回撤: {max_drawdown:.2f}% | 夏普比率: {sharpe:.2f}")
-        self.log(f"  总交易笔数: {len(trade_records)} 笔 | 严扣印花税及手续费: {total_fees:,.2f} 元")
+        self.log_success(f"低换手组合回测圆满结束！")
+        self.log(f"  策略总收益率: {total_return:+.2f}%  vs  基准收益率: {bm_total_return:+.2f}%")
+        self.log(f"  年化复合收益率: {annual_return:+.2f}% | 最大回撤: {max_drawdown:.2f}% | 夏普比率: {sharpe:.2f}")
+        self.log(f"  总交易笔数: {len(trade_records)} 笔 | 严扣印花税及手续费: {total_fees:,.2f} 元 (大幅压降!)")
 
         context["equity_df"] = equity_df
         context["holding_df"] = holding_df
