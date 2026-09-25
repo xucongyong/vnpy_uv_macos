@@ -305,7 +305,7 @@ def main():
     print(f"==================================================")
 
     # 1. 读取数据库数据
-    df = load_bars_from_db(args.symbol, days=args.days)
+    df = load_bars_from_db(args.symbol, limit=args.days)
     if df.empty:
         print(f"❌ 无法从数据库获取 {args.symbol} 数据，请先运行数据同步！")
         return
